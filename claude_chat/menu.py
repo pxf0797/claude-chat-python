@@ -833,7 +833,10 @@ class InteractiveMenu:
         if not self.target_folder:
             return False
 
-        target_dir = Path(self.target_folder)
+        # 展开环境变量和用户目录
+        expanded_path = os.path.expandvars(str(self.target_folder))
+        target_dir = Path(expanded_path).expanduser()
+
         if not target_dir.exists():
             try:
                 target_dir.mkdir(parents=True, exist_ok=True)
@@ -853,7 +856,7 @@ class InteractiveMenu:
                 return False
 
         # 询问用户是否复制
-        copy_choice = input(f"是否复制到目标文件夹? (y/n, 默认y): ").strip().lower()
+        copy_choice = input(f"是否复制到目标文件夹 ({target_path})? (y/n, 默认y): ").strip().lower()
         if copy_choice in ['n', 'no', '否']:
             print("⏭️  跳过复制")
             return False

@@ -96,7 +96,10 @@ def _copy_to_target_folder(source_path: Path, target_folder: str, prompt: bool =
     if not target_folder:
         return False
 
-    target_dir = Path(target_folder)
+    # 展开环境变量和用户目录
+    expanded_path = os.path.expandvars(str(target_folder))
+    target_dir = Path(expanded_path).expanduser()
+
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
     except Exception as e:
@@ -124,7 +127,7 @@ def _copy_to_target_folder(source_path: Path, target_folder: str, prompt: bool =
 
     # 询问是否复制（如果提示且是交互式终端）
     if prompt and sys.stdin.isatty():
-        copy_choice = input(f"是否复制到目标文件夹? (y/n, 默认y): ").strip().lower()
+        copy_choice = input(f"是否复制到目标文件夹 ({target_path})? (y/n, 默认y): ").strip().lower()
         if copy_choice in ['n', 'no', '否']:
             print("⏭️  跳过复制")
             return False
