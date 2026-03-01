@@ -6,6 +6,7 @@ Interactive menu system for Claude chat manager.
 
 import sys
 import os
+import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional, Any
@@ -13,6 +14,21 @@ from typing import List, Dict, Optional, Any
 from .parser import ClaudeDataParser
 from .exporter import MarkdownExporter
 from .core import Conversation
+
+# 尝试导入config模块（可能在不同位置）
+try:
+    # 首先尝试从当前包导入
+    from . import config as cfg_module
+except ImportError:
+    try:
+        # 然后尝试从父目录导入
+        import config as cfg_module
+    except ImportError:
+        # 最后尝试通过添加路径导入
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        import config as cfg_module
 
 
 class InteractiveMenu:
@@ -26,9 +42,19 @@ class InteractiveMenu:
             claude_dir: Claude数据目录路径
         """
         self.parser = ClaudeDataParser(claude_dir)
-        self.default_limit = 10  # 默认显示数量
-        self.include_thinking = False  # 默认不包含思考过程
-        self.output_dir = "./claude-chats"  # 默认输出目录
+
+        # 使用全局配置
+        self.config = cfg_module.get_config()
+
+        # 覆盖配置中的claude_dir（如果提供了参数）
+        if claude_dir != "~/.claude":
+            self.config.claude_dir = claude_dir
+
+        # 从配置中读取设置
+        self.default_limit = self.config.limit
+        self.include_thinking = self.config.include_thinking
+        self.output_dir = self.config.output_dir
+        self.target_folder = self.config.target_folder
 
         # 初始化导出器
         self.exporter = MarkdownExporter(self.output_dir)
@@ -329,6 +355,9 @@ class InteractiveMenu:
                         )
                         exported_count += 1
                         print(f"  ✅ ({exported_count}/{count}) {conversation.display_title}")
+
+                        # 询问是否复制到目标文件夹
+                        self._prompt_copy_file(Path(filepath))
                     except Exception as e:
                         print(f"  ❌ 导出失败: {e}")
 
@@ -580,6 +609,9 @@ class InteractiveMenu:
                         )
                         exported_count += 1
                         print(f"  ✅ ({exported_count}/{count}) {conversation.display_title}")
+
+                        # 询问是否复制到目标文件夹
+                        self._prompt_copy_file(Path(filepath))
                     except Exception as e:
                         print(f"  ❌ 导出失败 {session_id}: {e}")
 
@@ -692,9 +724,10 @@ class InteractiveMenu:
         print(f"1. 默认显示数量: {self.default_limit}")
         print(f"2. 包含思考过程: {'是' if self.include_thinking else '否'}")
         print(f"3. 导出目录: {self.output_dir}")
+        print(f"4. 目标文件夹 (复制用): {self.target_folder or '未设置'}")
         print()
 
-        choice = input("请选择要修改的配置 (1-3) 或按回车返回: ").strip()
+        choice = input("请选择要修改的配置 (1-4) 或按回车返回: ").strip()
 
         if choice == '1':
             try:
@@ -703,6 +736,7 @@ class InteractiveMenu:
                     new_limit = int(new_limit)
                     if new_limit > 0:
                         self.default_limit = new_limit
+                        self.config.limit = new_limit  # 更新配置对象
                         print(f"✅ 已更新显示数量为 {new_limit}")
                     else:
                         print("❌ 显示数量必须大于0")
@@ -713,9 +747,11 @@ class InteractiveMenu:
             include = input("是否包含思考过程? (y/n): ").strip().lower()
             if include in ['y', 'yes', '是']:
                 self.include_thinking = True
+                self.config.include_thinking = True  # 更新配置对象
                 print("✅ 已启用包含思考过程")
             elif include in ['n', 'no', '否']:
                 self.include_thinking = False
+                self.config.include_thinking = False  # 更新配置对象
                 print("✅ 已禁用包含思考过程")
             else:
                 print("❌ 无效输入")
@@ -724,10 +760,31 @@ class InteractiveMenu:
             new_dir = input(f"新的导出目录 (当前: {self.output_dir}): ").strip()
             if new_dir:
                 self.output_dir = new_dir
+                self.config.output_dir = new_dir  # 更新配置对象
                 self.exporter.output_dir = Path(new_dir)
                 # 确保目录存在
                 self.exporter.output_dir.mkdir(parents=True, exist_ok=True)
                 print(f"✅ 已更新导出目录为 {new_dir}")
+
+        elif choice == '4':
+            new_target = input(f"新的目标文件夹 (当前: {self.target_folder or '未设置'}): ").strip()
+            if new_target:
+                self.target_folder = new_target
+                self.config.target_folder = new_target  # 更新配置对象
+                # 确保目录存在
+                target_path = Path(new_target)
+                if target_path.exists() and not target_path.is_dir():
+                    print(f"❌ 目标路径存在但不是目录: {new_target}")
+                    self.target_folder = ""
+                    self.config.target_folder = ""
+                else:
+                    target_path.mkdir(parents=True, exist_ok=True)
+                    print(f"✅ 已更新目标文件夹为 {new_target}")
+            else:
+                # 清空目标文件夹
+                self.target_folder = ""
+                self.config.target_folder = ""
+                print("✅ 已清除目标文件夹设置")
 
     def _get_session_index(self, action: str) -> Optional[int]:
         """
@@ -762,6 +819,54 @@ class InteractiveMenu:
         include = input("是否包含思考过程? (y/n, 默认n): ").strip().lower()
         return include in ['y', 'yes', '是']
 
+    def _prompt_copy_file(self, source_path: Path) -> bool:
+        """
+        询问用户是否将文件复制到目标文件夹
+
+        Args:
+            source_path: 源文件路径
+
+        Returns:
+            是否执行了复制操作
+        """
+        # 检查是否设置了目标文件夹
+        if not self.target_folder:
+            return False
+
+        target_dir = Path(self.target_folder)
+        if not target_dir.exists():
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                print(f"📁 已创建目标文件夹: {target_dir}")
+            except Exception as e:
+                print(f"❌ 无法创建目标文件夹 {target_dir}: {e}")
+                return False
+
+        # 构建目标路径
+        target_path = target_dir / source_path.name
+
+        # 检查目标文件是否已存在
+        if target_path.exists():
+            overwrite = input(f"⚠️  目标文件已存在: {target_path}\n是否覆盖? (y/n, 默认n): ").strip().lower()
+            if overwrite not in ['y', 'yes', '是']:
+                print("⏭️  跳过复制")
+                return False
+
+        # 询问用户是否复制
+        copy_choice = input(f"是否复制到目标文件夹? (y/n, 默认y): ").strip().lower()
+        if copy_choice in ['n', 'no', '否']:
+            print("⏭️  跳过复制")
+            return False
+
+        # 执行复制
+        try:
+            shutil.copy2(source_path, target_path)  # copy2 保留元数据
+            print(f"✅ 已复制到: {target_path}")
+            return True
+        except Exception as e:
+            print(f"❌ 复制失败: {e}")
+            return False
+
     def _export_conversation(self, conversation: Conversation):
         """导出会话"""
         include_thinking = self._confirm_include_thinking()
@@ -773,6 +878,9 @@ class InteractiveMenu:
                 format_type="enhanced"
             )
             print(f"\n✅ 已导出: {filepath}")
+
+            # 询问是否复制到目标文件夹
+            self._prompt_copy_file(filepath)
         except Exception as e:
             print(f"❌ 导出失败: {e}")
 

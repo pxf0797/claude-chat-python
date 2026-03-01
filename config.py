@@ -15,6 +15,7 @@ class Config:
     DEFAULT_EXPORT_FORMAT = "enhanced"  # "basic" or "enhanced"
     DEFAULT_INCLUDE_THINKING = False
     DEFAULT_LIMIT = 20
+    DEFAULT_TARGET_FOLDER = ""  # 默认空，表示不复制到其他文件夹
 
     def __init__(self):
         self.claude_dir = self._get_env_var("CLAUDE_DIR", self.DEFAULT_CLAUDE_DIR)
@@ -22,6 +23,7 @@ class Config:
         self.export_format = self._get_env_var("CLAUDE_EXPORT_FORMAT", self.DEFAULT_EXPORT_FORMAT)
         self.include_thinking = self._get_bool_env_var("CLAUDE_INCLUDE_THINKING", self.DEFAULT_INCLUDE_THINKING)
         self.limit = self._get_int_env_var("CLAUDE_LIMIT", self.DEFAULT_LIMIT)
+        self.target_folder = self._get_env_var("CLAUDE_TARGET_FOLDER", self.DEFAULT_TARGET_FOLDER)
 
     def _get_env_var(self, name: str, default: str) -> str:
         """Get environment variable or default."""
@@ -70,6 +72,7 @@ class Config:
         print(f"  Export format: {self.export_format}")
         print(f"  Include thinking: {self.include_thinking}")
         print(f"  Default limit: {self.limit}")
+        print(f"  Target folder: {self.target_folder or '未设置'}")
 
     @classmethod
     def from_args(cls, args) -> 'Config':
@@ -87,6 +90,8 @@ class Config:
             config.include_thinking = args.include_thinking
         if hasattr(args, 'limit') and args.limit:
             config.limit = args.limit
+        if hasattr(args, 'target_folder') and args.target_folder:
+            config.target_folder = args.target_folder
 
         return config
 

@@ -3,11 +3,24 @@ Command-line interface for Claude chat manager.
 """
 import argparse
 import sys
+import shutil
 from pathlib import Path
 from datetime import datetime
 
 from .parser import ClaudeDataParser
 from .exporter import MarkdownExporter
+
+# 尝试导入config模块
+try:
+    from . import config as cfg_module
+except ImportError:
+    try:
+        import config as cfg_module
+    except ImportError:
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        import config as cfg_module
 
 
 def list_sessions_command(args):
@@ -68,6 +81,86 @@ def view_conversation_command(args):
     print("\n" + "=" * 80)
 
 
+def _copy_to_target_folder(source_path: Path, target_folder: str, prompt: bool = True) -> bool:
+    """
+    将文件复制到目标文件夹。
+
+    Args:
+        source_path: 源文件路径
+        target_folder: 目标文件夹路径
+        prompt: 是否提示用户
+
+    Returns:
+        是否执行了复制操作
+    """
+    if not target_folder:
+        return False
+
+    target_dir = Path(target_folder)
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"❌ 无法创建目标文件夹 {target_dir}: {e}")
+        return False
+
+    target_path = target_dir / source_path.name
+
+    # 检查目标文件是否已存在
+    if target_path.exists():
+        if prompt:
+            # 提示模式：询问是否覆盖
+            if sys.stdin.isatty():
+                overwrite = input(f"⚠️  目标文件已存在: {target_path}\n是否覆盖? (y/n, 默认n): ").strip().lower()
+                if overwrite not in ['y', 'yes', '是']:
+                    print("⏭️  跳过复制")
+                    return False
+            else:
+                # 非交互式，不覆盖
+                print(f"⏭️  目标文件已存在，跳过复制: {target_path}")
+                return False
+        else:
+            # 非提示模式：自动覆盖
+            print(f"⚠️  目标文件已存在，自动覆盖: {target_path}")
+
+    # 询问是否复制（如果提示且是交互式终端）
+    if prompt and sys.stdin.isatty():
+        copy_choice = input(f"是否复制到目标文件夹? (y/n, 默认y): ").strip().lower()
+        if copy_choice in ['n', 'no', '否']:
+            print("⏭️  跳过复制")
+            return False
+
+    # 执行复制
+    try:
+        shutil.copy2(source_path, target_path)  # copy2 保留元数据
+        print(f"✅ 已复制到: {target_path}")
+        return True
+    except Exception as e:
+        print(f"❌ 复制失败: {e}")
+        return False
+
+
+def _get_target_folder(args) -> str:
+    """
+    获取目标文件夹路径，优先级：命令行参数 > 配置文件 > 空字符串
+
+    Returns:
+        目标文件夹路径，如果没有设置则返回空字符串
+    """
+    # 首先检查命令行参数
+    if hasattr(args, 'target_folder') and args.target_folder:
+        return args.target_folder
+
+    # 然后检查配置文件
+    try:
+        config = cfg_module.get_config()
+        if config.target_folder:
+            return config.target_folder
+    except (AttributeError, ImportError):
+        pass
+
+    return ""
+
+
 def export_command(args):
     """Export conversation command."""
     parser = ClaudeDataParser(args.claude_dir)
@@ -83,6 +176,12 @@ def export_command(args):
                 format_type=args.format
             )
             print(f"✅ 已导出: {filepath}")
+
+            # 复制到目标文件夹（如果设置了）
+            target_folder = _get_target_folder(args)
+            if target_folder:
+                prompt = not args.no_prompt_copy if hasattr(args, 'no_prompt_copy') else True
+                _copy_to_target_folder(Path(filepath), target_folder, prompt=prompt)
         else:
             print(f"❌ 未找到会话: {args.session_id}")
 
@@ -105,6 +204,12 @@ def export_command(args):
                     exported_count += 1
                     print(f"  ✅ {conversation.display_title}")
 
+                    # 复制到目标文件夹（如果设置了）
+                    target_folder = _get_target_folder(args)
+                    if target_folder:
+                        prompt = not args.no_prompt_copy if hasattr(args, 'no_prompt_copy') else True
+                        _copy_to_target_folder(Path(filepath), target_folder, prompt=prompt)
+
         print(f"\n✅ 已导出 {exported_count} 个会话到: {args.output_dir}")
 
     elif args.all:
@@ -126,6 +231,12 @@ def export_command(args):
                         )
                         exported_count += 1
                         print(f"  ✅ ({exported_count}/{len(sessions)}) {conversation.display_title}")
+
+                        # 复制到目标文件夹（如果设置了）
+                        target_folder = _get_target_folder(args)
+                        if target_folder:
+                            prompt = not args.no_prompt_copy if hasattr(args, 'no_prompt_copy') else True
+                            _copy_to_target_folder(Path(filepath), target_folder, prompt=prompt)
                     except Exception as e:
                         print(f"  ❌ 导出失败 {session_id}: {e}")
 
@@ -234,6 +345,10 @@ def main():
                              help='包含助手的思考过程')
     export_parser.add_argument('--format', choices=['basic', 'enhanced'],
                              default='enhanced', help='导出格式 (默认: enhanced)')
+    export_parser.add_argument('--target-folder',
+                             help='目标文件夹，导出后可选择复制到此文件夹')
+    export_parser.add_argument('--no-prompt-copy', action='store_true',
+                             help='不提示直接复制到目标文件夹（如果设置了目标文件夹）')
 
     # Export mode options (mutually exclusive)
     export_group = export_parser.add_mutually_exclusive_group(required=True)
