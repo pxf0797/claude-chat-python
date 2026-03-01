@@ -43,27 +43,26 @@ class InteractiveMenu:
     def _print_welcome(self):
         """显示欢迎信息"""
         print("\n" + "="*50)
-        print("🎯 Claude Chat 交互管理器")
+        print("🎯 Claude Chat 交互管理器 (快捷命令模式)")
         print("="*50)
-        print("运行后自动显示最近会话，通过数字菜单选择操作")
+        print("运行后自动显示最近会话，使用快捷命令进行操作")
+        print("输入 '?' 查看可用命令，'m' 显示完整菜单")
         print("="*50 + "\n")
 
     def _main_loop(self):
-        """主循环"""
+        """主循环（快捷命令模式）"""
         while True:
-            # 显示会话列表
-            self._list_sessions_with_menu()
+            # 显示紧凑会话列表
+            self._show_compact_list()
 
-            # 显示操作菜单
-            choice = self._show_menu()
-
-            # 处理选择
-            if not self._handle_menu_choice(choice):
+            # 获取并执行快捷命令
+            command = self._prompt_quick_command()
+            if not self._execute_quick_command(command):
                 break
 
-    def _list_sessions_with_menu(self, limit: Optional[int] = None):
+    def _show_compact_list(self, limit: Optional[int] = None):
         """
-        显示会话列表和菜单
+        显示紧凑会话列表（单行格式）
 
         Args:
             limit: 显示数量限制，None使用默认值
@@ -78,9 +77,9 @@ class InteractiveMenu:
             print("❌ 未找到任何会话记录")
             return
 
-        # 显示会话列表
+        # 显示紧凑会话列表
         print(f"\n📋 最近会话 (显示{len(self.current_sessions)}个)")
-        print("-" * 90)
+        print("-" * 80)
 
         for i, session in enumerate(self.current_sessions, 1):
             dt = session.get('datetime', datetime.now())
@@ -88,15 +87,313 @@ class InteractiveMenu:
             project = session.get('project', '未知项目') or '未知项目'
             session_id = session.get('sessionId', '未知ID') or '未知ID'
 
-            # 显示序号、时间、标题、项目
-            print(f"{i:3d}. {dt.strftime('%Y-%m-%d %H:%M')} | {display[:50]:50s}")
-            print(f"     项目: {project[:40]:40s}")
-            print(f"     ID: {session_id[:36]:36s}")
+            # 简化项目路径（将用户目录替换为~）
+            if project.startswith('/Users/'):
+                parts = project.split('/')
+                if len(parts) >= 3:
+                    project = f"~/{'/'.join(parts[3:])}" if len(parts) > 3 else "~"
 
-            if i < len(self.current_sessions):
-                print("-" * 90)
+            # 紧凑单行显示：序号 时间 标题 项目 ID前8位
+            time_str = dt.strftime('%H:%M')
+            display_short = display[:40] + "..." if len(display) > 40 else display
+            project_short = project[:20] + "..." if len(project) > 20 else project
+            id_short = session_id[:8] + "..." if len(session_id) > 8 else session_id
 
-        print("-" * 90)
+            print(f"[{i:2d}] {time_str} | {display_short:43s} | {project_short:23s} | {id_short}")
+
+        print("-" * 80)
+
+    def _prompt_quick_command(self) -> str:
+        """
+        提示输入快捷命令
+
+        Returns:
+            用户输入的命令字符串
+        """
+        print("\n快捷命令: v1(查看) e2(导出) s关键词(搜索) m(菜单) q(退出)")
+        print("示例: v1 查看第1个, e3 导出第3个, e1-3 导出1-3个, s python 搜索")
+
+        while True:
+            try:
+                command = input("\n> ").strip()
+                if command:
+                    return command
+                else:
+                    print("请输入命令")
+            except (KeyboardInterrupt, EOFError):
+                print("\n")
+                return 'q'
+
+    def _execute_quick_command(self, command: str) -> bool:
+        """
+        执行快捷命令
+
+        Args:
+            command: 命令字符串
+
+        Returns:
+            True表示继续循环，False表示退出
+        """
+        if not command:
+            return True
+
+        command = command.lower()
+
+        # 退出命令
+        if command in ['q', 'quit', 'exit', '0']:
+            print("\n👋 再见！")
+            return False
+
+        # 查看命令: v1, v2, ...
+        if command.startswith('v'):
+            try:
+                # 提取数字，支持 v1, v2-5 等
+                num_str = command[1:].strip()
+                if '-' in num_str:
+                    # 范围查看，暂时只处理第一个
+                    start = int(num_str.split('-')[0])
+                    if 1 <= start <= len(self.current_sessions):
+                        self._view_session_by_index(start - 1)
+                    else:
+                        print(f"❌ 无效的序号: {start}")
+                else:
+                    idx = int(num_str)
+                    if 1 <= idx <= len(self.current_sessions):
+                        self._view_session_by_index(idx - 1)
+                    else:
+                        print(f"❌ 无效的序号: {idx}")
+            except ValueError:
+                print(f"❌ 无效的命令格式: {command}")
+                print("使用格式: v1 (查看第1个会话)")
+
+        # 导出命令: e1, e2, e1-3, ...
+        elif command.startswith('e'):
+            try:
+                num_str = command[1:].strip()
+                if '-' in num_str:
+                    # 范围导出
+                    parts = num_str.split('-')
+                    start = int(parts[0])
+                    end = int(parts[1]) if len(parts) > 1 else start
+
+                    if 1 <= start <= end <= len(self.current_sessions):
+                        self._export_range(start, end)
+                    else:
+                        print(f"❌ 无效的范围: {start}-{end}")
+                else:
+                    idx = int(num_str)
+                    if 1 <= idx <= len(self.current_sessions):
+                        self._export_single_by_index(idx - 1)
+                    else:
+                        print(f"❌ 无效的序号: {idx}")
+            except ValueError:
+                print(f"❌ 无效的命令格式: {command}")
+                print("使用格式: e1 (导出第1个会话) 或 e1-3 (导出1-3个会话)")
+
+        # 搜索命令: s python, s 关键词
+        elif command.startswith('s '):
+            keyword = command[2:].strip()
+            if keyword:
+                self._search_sessions(keyword)
+            else:
+                print("❌ 请输入搜索关键词")
+
+        # 菜单命令: m
+        elif command == 'm':
+            self._show_full_menu()
+
+        # 显示更多会话: more, l
+        elif command in ['more', 'l']:
+            self._show_more_sessions()
+
+        # 统计信息: stats, t
+        elif command in ['stats', 't']:
+            self._show_stats()
+
+        # 配置选项: config, c
+        elif command in ['config', 'c']:
+            self._show_settings()
+
+        # 帮助命令: ?, help, h
+        elif command in ['?', 'help', 'h']:
+            self._show_help()
+
+        else:
+            print(f"❌ 未知命令: {command}")
+            print("输入 '?' 查看帮助命令")
+
+        # 命令执行后等待用户按回车继续（除了退出和搜索）
+        if not command.startswith('q') and not command.startswith('s '):
+            input("\n↵ 按回车键继续...")
+
+        return True
+
+    def _view_session_by_index(self, index: int):
+        """通过索引查看会话"""
+        if not self.current_sessions or index < 0 or index >= len(self.current_sessions):
+            print("❌ 无效的会话索引")
+            return
+
+        session = self.current_sessions[index]
+        session_id = session.get('sessionId')
+
+        if not session_id:
+            print("❌ 会话ID不存在")
+            return
+
+        conversation = self.parser.get_conversation(session_id)
+        if not conversation:
+            print(f"❌ 无法加载会话: {session_id}")
+            return
+
+        self.current_conversation = conversation
+
+        # 显示会话详情（使用原有的显示逻辑但简化）
+        print(f"\n💬 {conversation.display_title}")
+        print(f"   时间: {conversation.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   项目: {conversation.project_path}")
+        print(f"   持续时间: {conversation.duration_seconds:.0f}秒")
+        print(f"   消息数量: {len(conversation.messages)}")
+        print("=" * 80)
+
+        # 显示前3条消息预览
+        for i, msg in enumerate(conversation.messages[:3], 1):
+            time_str = msg.timestamp.strftime("%H:%M:%S")
+            role_icon = "👤" if msg.role == "user" else "🤖"
+            role_name = "用户" if msg.role == "user" else "Claude"
+
+            print(f"\n{role_icon} {role_name} ({i}) [{time_str}]")
+            print("-" * 40)
+            print(msg.content[:300])  # 显示前300字符
+            if len(msg.content) > 300:
+                print("... [内容已截断]")
+
+        if len(conversation.messages) > 3:
+            print(f"\n... 还有 {len(conversation.messages) - 3} 条消息未显示")
+
+        print("\n" + "=" * 80)
+
+        # 提供导出选项
+        export_choice = input("\n输入 'e' 导出此会话，或直接按回车返回: ").strip().lower()
+        if export_choice == 'e':
+            self._export_conversation(conversation)
+
+    def _export_single_by_index(self, index: int):
+        """通过索引导出单个会话"""
+        if not self.current_sessions or index < 0 or index >= len(self.current_sessions):
+            print("❌ 无效的会话索引")
+            return
+
+        session = self.current_sessions[index]
+        session_id = session.get('sessionId')
+
+        if not session_id:
+            print("❌ 会话ID不存在")
+            return
+
+        conversation = self.parser.get_conversation(session_id)
+        if not conversation:
+            print(f"❌ 无法加载会话: {session_id}")
+            return
+
+        self._export_conversation(conversation)
+
+    def _export_range(self, start: int, end: int):
+        """导出指定范围的会话（start和end都是1-based）"""
+        if not self.current_sessions:
+            print("❌ 当前没有会话列表")
+            return
+
+        if start < 1 or end > len(self.current_sessions) or start > end:
+            print(f"❌ 无效的范围: {start}-{end}")
+            return
+
+        count = end - start + 1
+        include_thinking = self._confirm_include_thinking()
+
+        print(f"\n📤 开始导出 {count} 个会话 ({start}-{end})...")
+        exported_count = 0
+
+        for i in range(start - 1, end):
+            session = self.current_sessions[i]
+            session_id = session.get('sessionId')
+
+            if session_id:
+                conversation = self.parser.get_conversation(session_id)
+                if conversation:
+                    try:
+                        filepath = self.exporter.export_conversation(
+                            conversation,
+                            include_thinking=include_thinking,
+                            format_type="enhanced"
+                        )
+                        exported_count += 1
+                        print(f"  ✅ ({exported_count}/{count}) {conversation.display_title}")
+                    except Exception as e:
+                        print(f"  ❌ 导出失败: {e}")
+
+        print(f"\n✅ 批量导出完成，共导出 {exported_count} 个会话")
+        print(f"导出目录: {self.exporter.output_dir}")
+
+
+    def _show_full_menu(self):
+        """显示完整菜单（传统模式）"""
+        print("\n📌 完整菜单模式:")
+        print("  [1] 查看会话详情")
+        print("  [2] 导出单个会话")
+        print("  [3] 导出多个会话")
+        print("  [4] 搜索会话")
+        print("  [5] 显示更多会话")
+        print("  [6] 查看统计信息")
+        print("  [7] 配置选项")
+        print("  [0] 退出")
+        print()
+
+        while True:
+            try:
+                choice = input("请输入选项编号 [0-7]: ").strip()
+                if choice in ['0', '1', '2', '3', '4', '5', '6', '7']:
+                    if choice == '0':
+                        print("\n👋 再见！")
+                        return False
+                    else:
+                        self._handle_menu_choice(choice)
+                        return True
+                else:
+                    print("❌ 无效选项，请输入 0-7 之间的数字")
+            except (KeyboardInterrupt, EOFError):
+                print("\n")
+                return True
+
+    def _show_help(self):
+        """显示帮助信息"""
+        print("\n📖 快捷命令帮助:")
+        print("=" * 50)
+        print("会话操作:")
+        print("  v1, v2, ...     查看第1,2,...个会话")
+        print("  v1-3            查看第1-3个会话（暂支持第一个）")
+        print("  e1, e2, ...     导出第1,2,...个会话")
+        print("  e1-3            导出第1-3个会话")
+        print("  s 关键词        搜索包含关键词的会话")
+        print()
+        print("系统命令:")
+        print("  m               显示完整菜单")
+        print("  more, l         显示更多会话")
+        print("  stats, t        查看统计信息")
+        print("  config, c       配置选项")
+        print("  ?, help, h      显示此帮助")
+        print("  q, quit, exit   退出程序")
+        print("=" * 50)
+
+    def _list_sessions_with_menu(self, limit: Optional[int] = None):
+        """
+        显示会话列表和菜单（兼容旧版本）
+
+        Args:
+            limit: 显示数量限制，None使用默认值
+        """
+        # 调用新的紧凑列表显示
+        self._show_compact_list(limit)
 
     def _show_menu(self) -> str:
         """
@@ -289,13 +586,29 @@ class InteractiveMenu:
         print(f"\n✅ 批量导出完成，共导出 {exported_count} 个会话")
         print(f"导出目录: {self.exporter.output_dir}")
 
-    def _search_sessions(self):
-        """搜索会话"""
-        keyword = input("请输入搜索关键词: ").strip()
-        if not keyword:
-            print("❌ 搜索关键词不能为空")
-            return
+    def _search_sessions(self, keyword: Optional[str] = None):
+        """
+        搜索会话
 
+        Args:
+            keyword: 搜索关键词，如果为None则提示输入
+        """
+        if keyword is None:
+            keyword = input("请输入搜索关键词: ").strip()
+            if not keyword:
+                print("❌ 搜索关键词不能为空")
+                return
+
+        # 调用带参数的搜索函数
+        self._search_sessions_with_keyword(keyword)
+
+    def _search_sessions_with_keyword(self, keyword: str):
+        """
+        使用关键词搜索会话（内部实现）
+
+        Args:
+            keyword: 搜索关键词
+        """
         print(f"\n🔍 正在搜索包含 '{keyword}' 的会话...")
 
         # 搜索最近100个会话
@@ -317,7 +630,7 @@ class InteractiveMenu:
         print(f"✅ 找到 {len(results)} 个相关会话")
 
         # 显示搜索结果
-        self._list_sessions_with_menu(len(results))
+        self._show_compact_list(len(results))
 
     def _show_more_sessions(self):
         """显示更多会话"""
