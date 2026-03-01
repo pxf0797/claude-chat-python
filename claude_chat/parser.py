@@ -199,24 +199,50 @@ class ClaudeDataParser:
         """Parse user message from data."""
         try:
             message_data = data['message']
-            content = ""
+            content_parts = []
 
             # Extract content based on format
             if isinstance(message_data.get('content'), str):
-                content = message_data['content']
+                content_parts.append(message_data['content'])
             elif isinstance(message_data.get('content'), dict):
-                content = message_data['content'].get('text', '')
+                text = message_data['content'].get('text', '')
+                if text:
+                    content_parts.append(text)
             elif isinstance(message_data.get('content'), list):
                 # Handle list of content blocks
                 for item in message_data['content']:
-                    if isinstance(item, dict) and item.get('type') == 'text':
-                        content = item.get('text', '')
-                        break
+                    if isinstance(item, dict):
+                        item_type = item.get('type', '')
+
+                        if item_type == 'text':
+                            item_text = item.get('text', '')
+                            if item_text:
+                                content_parts.append(item_text)
+                        elif item_type == 'tool_result':
+                            # Extract tool result content
+                            tool_content = item.get('content', '')
+                            if tool_content:
+                                content_parts.append(f"[工具结果] {tool_content}")
+                        elif item_type == 'image':
+                            # Handle image content (marker only)
+                            image_info = item.get('source', {})
+                            if isinstance(image_info, dict):
+                                media_type = image_info.get('media_type', 'image')
+                                content_parts.append(f"[{media_type}]")
+                            else:
+                                content_parts.append("[图像]")
+                        else:
+                            # Try to extract any text content from various fields
+                            item_text = item.get('text', '') or item.get('content', '')
+                            if item_text:
+                                content_parts.append(item_text)
+
+            content = " ".join(content_parts).strip()
 
             return Message(
                 message_id=data.get('uuid', str(hash(str(data)))),
                 role='user',
-                content=content.strip(),
+                content=content,
                 timestamp=self._parse_timestamp(data['timestamp'])
             )
         except (KeyError, TypeError) as e:
@@ -227,7 +253,7 @@ class ClaudeDataParser:
         """Parse assistant message from data."""
         try:
             message_data = data['message']
-            content = ""
+            content_parts = []
             thinking = ""
             model = message_data.get('model', '')
 
@@ -236,19 +262,69 @@ class ClaudeDataParser:
                 for item in message_data['content']:
                     if isinstance(item, dict):
                         item_type = item.get('type', '')
-                        item_text = item.get('text', '')
 
                         if item_type == 'thinking':
-                            thinking = item_text
+                            thinking_text = item.get('thinking', '')
+                            thinking = thinking_text
+                            # Include thinking as part of content with marker
+                            if thinking_text:
+                                content_parts.append(f"[思考] {thinking_text}")
                         elif item_type == 'text':
-                            content = item_text
+                            text_content = item.get('text', '')
+                            if text_content:
+                                content_parts.append(text_content)
+                        elif item_type == 'tool_use':
+                            # Extract tool use information
+                            tool_name = item.get('name', '')
+                            tool_input = item.get('input', {})
+                            # Format tool use as text
+                            tool_text = f"[工具调用: {tool_name}]"
+                            if tool_input:
+                                tool_text += f" {str(tool_input)}"
+                            content_parts.append(tool_text)
+                        elif item_type == 'tool_result':
+                            # Extract tool result
+                            tool_name = item.get('tool_name', '')
+                            tool_result = item.get('result', '')
+                            # Format tool result
+                            result_text = f"[工具结果: {tool_name}]"
+                            if tool_result:
+                                # Smart truncation for long results
+                                result_str = str(tool_result)
+                                if len(result_str) > 500:
+                                    # Show first 300 chars and last 100 chars for context
+                                    result_str = result_str[:300] + " [...] " + result_str[-100:]
+                                result_text += f" {result_str}"
+                            content_parts.append(result_text)
+                        elif item_type == 'image':
+                            # Handle image content (marker only)
+                            image_info = item.get('source', {})
+                            if isinstance(image_info, dict):
+                                media_type = image_info.get('media_type', 'image')
+                                content_parts.append(f"[{media_type}]")
+                            else:
+                                content_parts.append("[图像]")
+                        else:
+                            # Unknown type, try to extract any text content
+                            for key in ['text', 'content', 'result', 'input', 'thinking']:
+                                if key in item and item[key]:
+                                    val = item[key]
+                                    if isinstance(val, str):
+                                        content_parts.append(f"[{item_type}] {val}")
+                                        break
+                                    elif isinstance(val, (dict, list)):
+                                        content_parts.append(f"[{item_type}] {str(val)}")
+                                        break
             elif isinstance(message_data.get('content'), str):
-                content = message_data['content']
+                content_parts.append(message_data['content'])
+
+            # Join all content parts
+            content = "\n".join(content_parts).strip()
 
             return Message(
                 message_id=data.get('uuid', str(hash(str(data)))),
                 role='assistant',
-                content=content.strip(),
+                content=content,
                 timestamp=self._parse_timestamp(data['timestamp']),
                 model=model,
                 thinking=thinking.strip() if thinking else None

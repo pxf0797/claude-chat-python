@@ -192,3 +192,7 @@ test-data/
 *.local
 config.ini
 config.local.py
+
+# Temporary alias files
+folder-alias.json
+private-folder-alias.json

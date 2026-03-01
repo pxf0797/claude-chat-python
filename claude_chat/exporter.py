@@ -91,7 +91,7 @@ class MarkdownExporter:
             if msg.role == "user":
                 lines.append(f"## 👤 用户")
                 lines.append(f"> *{time_str}*\n")
-                lines.append(f"{msg.content}\n")
+                lines.append(f"{self._format_content(msg.content)}\n")
                 lines.append("---\n")
 
             elif msg.role == "assistant":
@@ -108,7 +108,7 @@ class MarkdownExporter:
                     lines.append(f"```\n{msg.thinking}\n```\n")
                     lines.append("### 📝 回答\n")
 
-                lines.append(f"{msg.content}\n")
+                lines.append(f"{self._format_content(msg.content)}\n")
                 lines.append("---\n")
 
         return "\n".join(lines)
@@ -154,20 +154,24 @@ class MarkdownExporter:
         lines.append("```\n")
 
         # Conversation content with improved formatting
+        turn_number = 0
         for i, msg in enumerate(conversation.messages):
             time_str = msg.timestamp.strftime("%H:%M:%S")
 
             if msg.role == "user":
-                lines.append(f"## 👤 用户 ({i//2 + 1})")
+                turn_number += 1
+                lines.append(f"## 👤 用户 ({turn_number})")
                 lines.append(f"<small>{time_str}</small>\n")
-                lines.append(f"{msg.content}\n")
+                lines.append(f"{self._format_content(msg.content)}\n")
 
                 # Add separator
                 if i < len(conversation.messages) - 1:
                     lines.append("---\n")
 
             elif msg.role == "assistant":
-                lines.append(f"## 🤖 Claude ({i//2 + 1})")
+                # Use current turn number (might be 0 if conversation starts with assistant)
+                display_turn = turn_number if turn_number > 0 else 1
+                lines.append(f"## 🤖 Claude ({display_turn})")
                 lines.append(f"<small>{time_str}")
                 if msg.model:
                     lines.append(f" · {msg.model}")
@@ -181,7 +185,7 @@ class MarkdownExporter:
                     lines.append("```\n")
                     lines.append("### 📝 回答\n")
 
-                lines.append(f"{msg.content}\n")
+                lines.append(f"{self._format_content(msg.content)}\n")
 
                 # Add separator
                 if i < len(conversation.messages) - 1:
@@ -259,6 +263,20 @@ class MarkdownExporter:
             filename = filename[:100]
 
         return filename
+
+    def _format_content(self, content: str) -> str:
+        """Format content for display, wrapping terminal output in code blocks."""
+        # Check if content looks like terminal output
+        if 'Last login:' in content or 'xfpan@MacBook-Pro' in content:
+            return f'```bash\n{content}\n```'
+        # Check for API error messages
+        if 'API Error:' in content:
+            return f'```\n{content}\n```'
+        # Check for other terminal-like patterns
+        lines = content.split('\n')
+        if len(lines) > 1 and any(line.strip().endswith(('%', '$', '#')) for line in lines[:3]):
+            return f'```bash\n{content}\n```'
+        return content
 
     def _extract_tags(self, conversation: Conversation) -> List[str]:
         """

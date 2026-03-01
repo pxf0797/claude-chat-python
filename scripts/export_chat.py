@@ -127,7 +127,7 @@ def main():
     print(f"Exporting {len(sessions_to_export)} sessions...")
     print(f"Output directory: {args.output_dir}")
     print(f"Format: {args.format}")
-    print(f"Include thinking: {args.include-thinking}")
+    print(f"Include thinking: {args.include_thinking}")
     print()
 
     exported_files = exporter.export_multiple(
