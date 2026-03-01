@@ -13,7 +13,7 @@ class Config:
     DEFAULT_CLAUDE_DIR = str(Path.home() / ".claude")
     DEFAULT_OUTPUT_DIR = "./claude-chats"
     DEFAULT_EXPORT_FORMAT = "enhanced"  # "basic" or "enhanced"
-    DEFAULT_INCLUDE_THINKING = True
+    DEFAULT_INCLUDE_THINKING = False
     DEFAULT_LIMIT = 20
     DEFAULT_TARGET_FOLDER = "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal/95_ClaudeCode/2026/02"  # 默认空，表示不复制到其他文件夹
 
