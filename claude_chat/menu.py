@@ -31,6 +31,35 @@ except ImportError:
         import config as cfg_module
 
 
+# 颜色常量 (ANSI escape codes)
+class Colors:
+    """终端颜色常量"""
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
+    GRAY = "\033[90m"
+
+    # 背景色
+    BG_RED = "\033[41m"
+    BG_GREEN = "\033[42m"
+    BG_YELLOW = "\033[43m"
+    BG_BLUE = "\033[44m"
+
+    # 样式组合
+    ERROR = RED + BOLD
+    SUCCESS = GREEN + BOLD
+    WARNING = YELLOW + BOLD
+    INFO = CYAN
+    TITLE = BLUE + BOLD
+    HIGHLIGHT = MAGENTA + BOLD
+
+
 class InteractiveMenu:
     """交互式菜单系统"""
 
@@ -60,6 +89,7 @@ class InteractiveMenu:
         self.exporter = MarkdownExporter(self.output_dir)
         self.current_sessions: List[Dict[str, Any]] = []
         self.current_conversation: Optional[Conversation] = None
+        self.skip_next_display = False  # 是否跳过下一次显示
 
     def run(self):
         """运行交互式菜单系统"""
@@ -78,36 +108,48 @@ class InteractiveMenu:
     def _main_loop(self):
         """主循环（快捷命令模式）"""
         while True:
-            # 显示紧凑会话列表
-            self._show_compact_list()
+            # 显示紧凑会话列表（除非跳过）
+            if not self.skip_next_display:
+                self._show_compact_list()
+            else:
+                self.skip_next_display = False
 
             # 获取并执行快捷命令
             command = self._prompt_quick_command()
             if not self._execute_quick_command(command):
                 break
 
-    def _show_compact_list(self, limit: Optional[int] = None):
+    def _show_compact_list(self, limit: Optional[int] = None, use_existing: bool = False):
         """
         显示紧凑会话列表（单行格式）
 
         Args:
             limit: 显示数量限制，None使用默认值
+            use_existing: 是否使用现有的self.current_sessions，True表示不重新获取
         """
         if limit is None:
             limit = self.default_limit
 
         # 获取会话列表
-        self.current_sessions = self.parser.list_sessions(limit=limit)
+        if use_existing:
+            # 使用现有列表，即使为空也不重新获取
+            pass
+        else:
+            # 总是重新获取数据，确保使用最新时刻
+            self.current_sessions = self.parser.list_sessions(limit=limit)
 
         if not self.current_sessions:
-            print("❌ 未找到任何会话记录")
+            print(f"{Colors.ERROR}❌ 未找到任何会话记录{Colors.RESET}")
             return
 
-        # 显示紧凑会话列表
-        print(f"\n📋 最近会话 (显示{len(self.current_sessions)}个)")
-        print("-" * 80)
+        # 应用显示限制
+        display_sessions = self.current_sessions[:limit]
 
-        for i, session in enumerate(self.current_sessions, 1):
+        # 显示紧凑会话列表
+        print(f"\n{Colors.TITLE}📋 最近会话 (显示{len(display_sessions)}个){Colors.RESET}")
+        print(f"{Colors.GRAY}{'-' * 80}{Colors.RESET}")
+
+        for i, session in enumerate(display_sessions, 1):
             dt = session.get('datetime', datetime.now())
             display = session.get('display', '无标题') or '无标题'
             project = session.get('project', '未知项目') or '未知项目'
@@ -119,15 +161,28 @@ class InteractiveMenu:
                 if len(parts) >= 3:
                     project = f"~/{'/'.join(parts[3:])}" if len(parts) > 3 else "~"
 
-            # 紧凑单行显示：序号 时间 标题 项目 ID前8位
-            time_str = dt.strftime('%H:%M')
-            display_short = display[:40] + "..." if len(display) > 40 else display
-            project_short = project[:20] + "..." if len(project) > 20 else project
+            # 紧凑单行显示：序号 日期时间 标题 项目 ID前8位
+            try:
+                date_str = dt.strftime('%Y-%m-%d')
+                time_str = dt.strftime('%H:%M')
+                datetime_str = f"{date_str} {time_str}"
+            except (AttributeError, TypeError):
+                datetime_str = "未知日期"
+            display_short = display[:29] + "..." if len(display) > 29 else display
+            project_short = project[:15] + "..." if len(project) > 15 else project
             id_short = session_id[:8] + "..." if len(session_id) > 8 else session_id
 
-            print(f"[{i:2d}] {time_str} | {display_short:43s} | {project_short:23s} | {id_short}")
+            # 彩色显示
+            index_color = Colors.BLUE + Colors.BOLD
+            datetime_color = Colors.CYAN
+            title_color = Colors.WHITE
+            project_color = Colors.GRAY
+            id_color = Colors.YELLOW
+            separator_color = Colors.GRAY
 
-        print("-" * 80)
+            print(f"{index_color}[{i:2d}]{separator_color} {datetime_color}{datetime_str:16s}{separator_color} | {title_color}{display_short:32s}{separator_color} | {project_color}{project_short:18s}{separator_color} | {id_color}{id_short}{Colors.RESET}")
+
+        print(f"{Colors.GRAY}{'-' * 80}{Colors.RESET}")
 
     def _prompt_quick_command(self) -> str:
         """
@@ -136,8 +191,8 @@ class InteractiveMenu:
         Returns:
             用户输入的命令字符串
         """
-        print("\n快捷命令: v1(查看) e2(导出) s关键词(搜索) m(菜单) q(退出)")
-        print("示例: v1 查看第1个, e3 导出第3个, e1-3 导出1-3个, s python 搜索")
+        print(f"\n{Colors.INFO}快捷命令: {Colors.HIGHLIGHT}v1{Colors.INFO}(查看) {Colors.HIGHLIGHT}e2{Colors.INFO}(导出) {Colors.HIGHLIGHT}s关键词{Colors.INFO}(搜索) {Colors.HIGHLIGHT}d日期{Colors.INFO}(日期筛选) {Colors.HIGHLIGHT}m{Colors.INFO}(菜单) {Colors.HIGHLIGHT}q{Colors.INFO}(退出)")
+        print(f"{Colors.INFO}示例: {Colors.HIGHLIGHT}v1 {Colors.INFO}查看第1个, {Colors.HIGHLIGHT}e3 {Colors.INFO}导出第3个, {Colors.HIGHLIGHT}e1-3 {Colors.INFO}导出1-3个, {Colors.HIGHLIGHT}s python {Colors.INFO}搜索, {Colors.HIGHLIGHT}d 2026-02-28 {Colors.INFO}筛选日期{Colors.RESET}")
 
         while True:
             try:
@@ -181,15 +236,15 @@ class InteractiveMenu:
                     if 1 <= start <= len(self.current_sessions):
                         self._view_session_by_index(start - 1)
                     else:
-                        print(f"❌ 无效的序号: {start}")
+                        print(f"{Colors.ERROR}❌ 无效的序号: {start}{Colors.RESET}")
                 else:
                     idx = int(num_str)
                     if 1 <= idx <= len(self.current_sessions):
                         self._view_session_by_index(idx - 1)
                     else:
-                        print(f"❌ 无效的序号: {idx}")
+                        print(f"{Colors.ERROR}❌ 无效的序号: {idx}{Colors.RESET}")
             except ValueError:
-                print(f"❌ 无效的命令格式: {command}")
+                print(f"{Colors.ERROR}❌ 无效的命令格式: {command}{Colors.RESET}")
                 print("使用格式: v1 (查看第1个会话)")
 
         # 导出命令: e1, e2, e1-3, ...
@@ -205,15 +260,15 @@ class InteractiveMenu:
                     if 1 <= start <= end <= len(self.current_sessions):
                         self._export_range(start, end)
                     else:
-                        print(f"❌ 无效的范围: {start}-{end}")
+                        print(f"{Colors.ERROR}❌ 无效的范围: {start}-{end}{Colors.RESET}")
                 else:
                     idx = int(num_str)
                     if 1 <= idx <= len(self.current_sessions):
                         self._export_single_by_index(idx - 1)
                     else:
-                        print(f"❌ 无效的序号: {idx}")
+                        print(f"{Colors.ERROR}❌ 无效的序号: {idx}{Colors.RESET}")
             except ValueError:
-                print(f"❌ 无效的命令格式: {command}")
+                print(f"{Colors.ERROR}❌ 无效的命令格式: {command}{Colors.RESET}")
                 print("使用格式: e1 (导出第1个会话) 或 e1-3 (导出1-3个会话)")
 
         # 搜索命令: s python, s 关键词
@@ -222,7 +277,20 @@ class InteractiveMenu:
             if keyword:
                 self._search_sessions(keyword)
             else:
-                print("❌ 请输入搜索关键词")
+                print(f"{Colors.ERROR}❌ 请输入搜索关键词{Colors.RESET}")
+
+        # 日期筛选命令: d 2026-02-28, date 2026-02-28
+        elif command.startswith('d ') or command.startswith('date '):
+            # 提取日期部分，支持 "d 2026-02-28" 或 "date 2026-02-28"
+            if command.startswith('d '):
+                date_str = command[2:].strip()
+            else:
+                date_str = command[5:].strip()
+
+            if date_str:
+                self._filter_sessions_by_date(date_str)
+            else:
+                print(f"{Colors.ERROR}❌ 请输入日期，格式如: 2026-02-28 或 02-28{Colors.RESET}")
 
         # 菜单命令: m
         elif command == 'm':
@@ -245,11 +313,14 @@ class InteractiveMenu:
             self._show_help()
 
         else:
-            print(f"❌ 未知命令: {command}")
+            print(f"{Colors.ERROR}❌ 未知命令: {command}{Colors.RESET}")
             print("输入 '?' 查看帮助命令")
 
-        # 命令执行后等待用户按回车继续（除了退出和搜索）
-        if not command.startswith('q') and not command.startswith('s '):
+        # 命令执行后等待用户按回车继续（除了退出、搜索和日期筛选）
+        if (not command.startswith('q') and
+            not command.startswith('s ') and
+            not command.startswith('d ') and
+            not command.startswith('date ')):
             input("\n↵ 按回车键继续...")
 
         return True
@@ -276,7 +347,7 @@ class InteractiveMenu:
 
         # 显示会话详情（使用原有的显示逻辑但简化）
         print(f"\n💬 {conversation.display_title}")
-        print(f"   时间: {conversation.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   时间: {Colors.CYAN}{conversation.start_time.strftime('%Y-%m-%d %H:%M:%S')}{Colors.RESET}")
         print(f"   项目: {conversation.project_path}")
         print(f"   持续时间: {conversation.duration_seconds:.0f}秒")
         print(f"   消息数量: {len(conversation.messages)}")
@@ -354,14 +425,14 @@ class InteractiveMenu:
                             format_type="enhanced"
                         )
                         exported_count += 1
-                        print(f"  ✅ ({exported_count}/{count}) {conversation.display_title}")
+                        print(f"  {Colors.SUCCESS}✅ ({exported_count}/{count}) {conversation.display_title}{Colors.RESET}")
 
                         # 询问是否复制到目标文件夹
                         self._prompt_copy_file(Path(filepath))
                     except Exception as e:
                         print(f"  ❌ 导出失败: {e}")
 
-        print(f"\n✅ 批量导出完成，共导出 {exported_count} 个会话")
+        print(f"\n{Colors.SUCCESS}✅ 批量导出完成，共导出 {exported_count} 个会话{Colors.RESET}")
         print(f"导出目录: {self.exporter.output_dir}")
 
 
@@ -404,6 +475,7 @@ class InteractiveMenu:
         print("  e1, e2, ...     导出第1,2,...个会话")
         print("  e1-3            导出第1-3个会话")
         print("  s 关键词        搜索包含关键词的会话")
+        print("  d 日期, date 日期  筛选指定日期的会话 (格式: 2026-02-28 或 02-28)")
         print()
         print("系统命令:")
         print("  m               显示完整菜单")
@@ -514,7 +586,7 @@ class InteractiveMenu:
 
         # 显示会话详情
         print(f"\n💬 {conversation.display_title}")
-        print(f"   时间: {conversation.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   时间: {Colors.CYAN}{conversation.start_time.strftime('%Y-%m-%d %H:%M:%S')}{Colors.RESET}")
         print(f"   项目: {conversation.project_path}")
         print(f"   持续时间: {conversation.duration_seconds:.0f}秒")
         print(f"   消息数量: {len(conversation.messages)} (👤{len([m for m in conversation.messages if m.role == 'user'])} | 🤖{len([m for m in conversation.messages if m.role == 'assistant'])})")
@@ -608,14 +680,14 @@ class InteractiveMenu:
                             format_type="enhanced"
                         )
                         exported_count += 1
-                        print(f"  ✅ ({exported_count}/{count}) {conversation.display_title}")
+                        print(f"  {Colors.SUCCESS}✅ ({exported_count}/{count}) {conversation.display_title}{Colors.RESET}")
 
                         # 询问是否复制到目标文件夹
                         self._prompt_copy_file(Path(filepath))
                     except Exception as e:
                         print(f"  ❌ 导出失败 {session_id}: {e}")
 
-        print(f"\n✅ 批量导出完成，共导出 {exported_count} 个会话")
+        print(f"\n{Colors.SUCCESS}✅ 批量导出完成，共导出 {exported_count} 个会话{Colors.RESET}")
         print(f"导出目录: {self.exporter.output_dir}")
 
     def _search_sessions(self, keyword: Optional[str] = None):
@@ -662,7 +734,90 @@ class InteractiveMenu:
         print(f"✅ 找到 {len(results)} 个相关会话")
 
         # 显示搜索结果
-        self._show_compact_list(len(results))
+        self._show_compact_list(len(results), use_existing=True)
+        # 设置跳过下一次显示，避免重复显示列表
+        self.skip_next_display = True
+
+    def _filter_sessions_by_date(self, date_str: str):
+        """
+        按日期筛选会话
+
+        Args:
+            date_str: 日期字符串，格式为 YYYY-MM-DD 或 MM-DD
+        """
+        date_str = date_str.strip()
+
+        # 验证日期格式
+        if len(date_str) == 10:
+            if date_str[4] != '-' or date_str[7] != '-':
+                print(f"{Colors.ERROR}❌ 无效的日期格式: '{date_str}'，应为 YYYY-MM-DD{Colors.RESET}")
+                return False
+        elif len(date_str) == 5:
+            if date_str[2] != '-':
+                print(f"{Colors.ERROR}❌ 无效的日期格式: '{date_str}'，应为 MM-DD{Colors.RESET}")
+                return False
+        else:
+            print(f"{Colors.ERROR}❌ 无效的日期格式: '{date_str}'，应为 YYYY-MM-DD 或 MM-DD{Colors.RESET}")
+            return False
+
+        print(f"\n{Colors.INFO}📅 正在筛选日期为 '{date_str}' 的会话...{Colors.RESET}")
+
+        # 获取所有会话（限制为最近500个，避免性能问题）
+        all_sessions = self.parser.list_sessions(limit=500)
+        results = []
+        match_count = 0
+        total_count = 0
+
+        for session in all_sessions:
+            if 'datetime' not in session:
+                continue
+            dt = session.get('datetime')
+            if not dt:
+                continue
+            total_count += 1
+            try:
+                session_date_str = dt.strftime('%Y-%m-%d')
+                session_date_short = dt.strftime('%m-%d')
+            except (AttributeError, TypeError) as e:
+                # dt 不是有效的 datetime 对象
+                continue
+
+            # 根据日期字符串长度决定匹配策略
+            match = False
+            if len(date_str) == 10:  # YYYY-MM-DD 格式
+                match = date_str == session_date_str
+            elif len(date_str) == 5:  # MM-DD 格式
+                match = date_str == session_date_short
+            else:
+                # 回退到原始逻辑
+                match = date_str == session_date_str or date_str == session_date_short
+
+            if match:
+                results.append(session)
+                match_count += 1
+
+        if not results:
+            print(f"{Colors.ERROR}❌ 未找到日期为 '{date_str}' 的会话{Colors.RESET}")
+            return False
+
+        # 更新当前会话列表为筛选结果
+        self.current_sessions = results
+        print(f"{Colors.SUCCESS}✅ 找到 {len(results)} 个日期为 '{date_str}' 的会话 (检查了 {total_count} 个有日期信息的会话){Colors.RESET}")
+
+        # 调试信息：显示前3个匹配会话的日期
+        if results:
+            print(f"{Colors.INFO}📅 匹配的会话日期示例:{Colors.RESET}")
+            for i, session in enumerate(results[:3]):
+                dt = session.get('datetime')
+                if dt:
+                    date_display = dt.strftime('%Y-%m-%d %H:%M')
+                    print(f"  {i+1}. {date_display}")
+
+        # 显示筛选结果
+        self._show_compact_list(len(results), use_existing=True)
+        # 设置跳过下一次显示，避免重复显示列表
+        self.skip_next_display = True
+        return True
 
     def _show_more_sessions(self):
         """显示更多会话"""
@@ -683,7 +838,7 @@ class InteractiveMenu:
         all_sessions = self.parser.list_sessions(limit=None)
 
         if not all_sessions:
-            print("❌ 未找到任何会话记录")
+            print(f"{Colors.ERROR}❌ 未找到任何会话记录{Colors.RESET}")
             return
 
         print("\n📊 统计信息")
