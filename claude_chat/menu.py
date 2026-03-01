@@ -816,7 +816,10 @@ class InteractiveMenu:
 
     def _confirm_include_thinking(self) -> bool:
         """确认是否包含思考过程"""
-        include = input("是否包含思考过程? (y/n, 默认n): ").strip().lower()
+        default_str = "y" if self.include_thinking else "n"
+        include = input(f"是否包含思考过程? (y/n, 默认{default_str}): ").strip().lower()
+        if include == "":
+            return self.include_thinking
         return include in ['y', 'yes', '是']
 
     def _prompt_copy_file(self, source_path: Path) -> bool:
