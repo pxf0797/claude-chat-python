@@ -91,7 +91,9 @@ class MarkdownExporter:
             if msg.role == "user":
                 lines.append(f"## 👤 用户")
                 lines.append(f"> *{time_str}*\n")
-                lines.append(f"{self._format_content(msg.content)}\n")
+                # Filter out thinking content (though unlikely in user messages)
+                filtered_content = self._filter_thinking(msg.content)
+                lines.append(f"{self._format_content(filtered_content)}\n")
                 lines.append("---\n")
 
             elif msg.role == "assistant":
@@ -108,7 +110,9 @@ class MarkdownExporter:
                     lines.append(f"```\n{msg.thinking}\n```\n")
                     lines.append("### 📝 回答\n")
 
-                lines.append(f"{self._format_content(msg.content)}\n")
+                # Filter out thinking content from message content
+                filtered_content = self._filter_thinking(msg.content)
+                lines.append(f"{self._format_content(filtered_content)}\n")
                 lines.append("---\n")
 
         return "\n".join(lines)
@@ -162,7 +166,9 @@ class MarkdownExporter:
                 turn_number += 1
                 lines.append(f"## 👤 用户 ({turn_number})")
                 lines.append(f"<small>{time_str}</small>\n")
-                lines.append(f"{self._format_content(msg.content)}\n")
+                # Filter out thinking content (though unlikely in user messages)
+                filtered_content = self._filter_thinking(msg.content)
+                lines.append(f"{self._format_content(filtered_content)}\n")
 
                 # Add separator
                 if i < len(conversation.messages) - 1:
@@ -185,7 +191,9 @@ class MarkdownExporter:
                     lines.append("```\n")
                     lines.append("### 📝 回答\n")
 
-                lines.append(f"{self._format_content(msg.content)}\n")
+                # Filter out thinking content from message content
+                filtered_content = self._filter_thinking(msg.content)
+                lines.append(f"{self._format_content(filtered_content)}\n")
 
                 # Add separator
                 if i < len(conversation.messages) - 1:
@@ -263,6 +271,25 @@ class MarkdownExporter:
             filename = filename[:100]
 
         return filename
+
+    def _filter_thinking(self, content: str) -> str:
+        """
+        Remove thinking content from message content.
+
+        Args:
+            content: Original message content
+
+        Returns:
+            Filtered content without thinking lines
+        """
+        # Remove lines containing "[思考]"
+        lines = content.split('\n')
+        filtered_lines = []
+        for line in lines:
+            if '[思考]' not in line:
+                filtered_lines.append(line)
+            # else skip the line containing thinking
+        return '\n'.join(filtered_lines)
 
     def _format_content(self, content: str) -> str:
         """Format content for display, wrapping terminal output in code blocks."""

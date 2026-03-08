@@ -15,7 +15,7 @@ class Config:
     DEFAULT_EXPORT_FORMAT = "enhanced"  # "basic" or "enhanced"
     DEFAULT_INCLUDE_THINKING = False
     DEFAULT_LIMIT = 20
-    DEFAULT_TARGET_FOLDER = "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal/95_ClaudeCode/2026/02"  # 默认空，表示不复制到其他文件夹
+    DEFAULT_TARGET_FOLDER = "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal/95_ClaudeCode/2026/03"  # 默认空，表示不复制到其他文件夹
 
     def __init__(self):
         self.claude_dir = self._get_env_var("CLAUDE_DIR", self.DEFAULT_CLAUDE_DIR)

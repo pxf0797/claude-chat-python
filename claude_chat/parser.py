@@ -265,10 +265,8 @@ class ClaudeDataParser:
 
                         if item_type == 'thinking':
                             thinking_text = item.get('thinking', '')
-                            thinking = thinking_text
-                            # Include thinking as part of content with marker
-                            if thinking_text:
-                                content_parts.append(f"[思考] {thinking_text}")
+                            thinking = thinking_text  # 只存储在thinking字段
+                            # 不添加到content_parts中
                         elif item_type == 'text':
                             text_content = item.get('text', '')
                             if text_content:
